@@ -1,0 +1,61 @@
+#!/bin/bash -e
+
+if [[ "$1" == "-h" ]]; then
+  # If the 'jekyll-builder' assemble script is executed with '-h' flag,
+  # print the usage.
+  exec /usr/libexec/s2i/usage
+fi
+
+if [ -n "$RUBYGEM_MIRROR" ]; then
+  echo "---> Using RubyGems mirror: $RUBYGEM_MIRROR"
+  bundle config mirror.https://rubygems.org $RUBYGEM_MIRROR
+fi
+
+# Restore artifacts from the previous build (if they exist).
+# We set them here just for show, but you will need to set this up with your logic
+# according to the application directory that you chose.
+
+if [ "$(ls /tmp/artifacts/ 2>/dev/null)" ]; then
+  echo "---> Restoring build artifacts..."
+  if [ ! -f .bundle ]; then
+    mkdir .bundle
+  fi
+  mv /tmp/artifacts/* ./
+fi
+
+shopt -s dotglob
+echo "---> Installing application source ..."
+mv /tmp/src/* ./
+
+echo "---> Building your Ruby application from source ..."
+if [ -f Gemfile ]; then
+  ADDTL_BUNDLE_ARGS=""
+  if [ -f Gemfile.lock ]; then
+    ADDTL_BUNDLE_ARGS="--deployment"
+  fi
+
+  echo "---> Running 'bundle install ${ADDTL_BUNDLE_ARGS}' ..."
+  bundle install --path ./bundle ${ADDTL_BUNDLE_ARGS}
+
+  echo "---> Cleaning up unused ruby gems ..."
+  bundle clean -V
+fi
+
+if ! bundle exec rackup -h &>/dev/null; then
+  echo "WARNING: Rubygem Rack is not installed in the present image."
+  echo "         Add rack to your Gemfile in order to start the web server."
+fi
+
+# Fix source directory permissions
+fix-permissions ./
+
+# Make the ./tmp folder world writeable as Rails or other frameworks might use
+# it to store temporary data (uploads/cache/sessions/etcd).
+# The ./db folder has to be writeable as well because when Rails complete the
+# migration it writes the schema version into ./db/schema.db
+set +e
+[[ -d ./tmp ]] && chgrp -R 0 ./tmp && chmod -R g+rw ./tmp
+[[ -d ./db ]] && chgrp -R 0 ./db && chmod -R g+rw ./db
+set -e
+
+exec bundle exec jekyll build
