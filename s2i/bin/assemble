@@ -58,4 +58,7 @@ set +e
 [[ -d ./db ]] && chgrp -R 0 ./db && chmod -R g+rw ./db
 set -e
 
-exec bundle exec jekyll build
+echo "---> Building site with Jekyll"
+exec bundle exec jekyll build --trace
+
+echo "---> Assemble complete"
